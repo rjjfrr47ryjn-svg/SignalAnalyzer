@@ -1,0 +1,120 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="@color/bg_deep"
+    android:gravity="center_horizontal"
+    android:padding="24dp">
+
+    <!-- Top spacer -->
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1" />
+
+    <!-- App Title -->
+    <TextView
+        android:id="@+id/titleText"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="@string/app_name"
+        android:textColor="@color/text_primary"
+        android:textSize="34sp"
+        android:textStyle="bold"
+        android:letterSpacing="0.02"
+        android:gravity="center" />
+
+    <!-- Cyan divider under title -->
+    <View
+        android:layout_width="60dp"
+        android:layout_height="3dp"
+        android:layout_marginTop="10dp"
+        android:layout_marginBottom="10dp"
+        android:background="@color/neon_cyan" />
+
+    <!-- Tagline -->
+    <TextView
+        android:id="@+id/taglineText"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="@string/app_tagline"
+        android:textColor="@color/text_secondary"
+        android:textSize="14sp"
+        android:letterSpacing="0.05"
+        android:gravity="center" />
+
+    <!-- Middle spacer -->
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1" />
+
+    <!-- Card container -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:background="@color/bg_card"
+        android:padding="28dp"
+        android:layout_marginBottom="24dp">
+
+        <!-- Status row -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:layout_marginBottom="20dp">
+
+            <!-- Status dot -->
+            <View
+                android:id="@+id/statusDot"
+                android:layout_width="12dp"
+                android:layout_height="12dp"
+                android:background="@color/neon_amber" />
+
+            <TextView
+                android:id="@+id/statusLabel"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="12dp"
+                android:text="@string/status_offline"
+                android:textColor="@color/text_secondary"
+                android:textSize="13sp"
+                android:letterSpacing="0.15"
+                android:textStyle="bold" />
+        </LinearLayout>
+
+        <!-- START SIGNAL button -->
+        <Button
+            android:id="@+id/startButton"
+            android:layout_width="match_parent"
+            android:layout_height="60dp"
+            android:text="@string/start_signal"
+            android:textColor="@color/bg_deepest"
+            android:textSize="16sp"
+            android:textStyle="bold"
+            android:letterSpacing="0.1"
+            android:background="@color/neon_cyan"
+            android:stateListAnimator="@null" />
+    </LinearLayout>
+
+    <!-- Bottom spacer -->
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1" />
+
+    <!-- Footer hint -->
+    <TextView
+        android:id="@+id/footerText"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="@string/floating_hint"
+        android:textColor="@color/text_dim"
+        android:textSize="11sp"
+        android:gravity="center"
+        android:layout_marginBottom="16dp" />
+
+</LinearLayout>
