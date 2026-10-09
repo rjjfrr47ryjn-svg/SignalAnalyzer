@@ -117,6 +117,7 @@ public class MainActivity extends Activity {
             runOnUiThread(new Runnable() {
                 @Override
                 public void run() {
+                    FloatingButtonService.resetProjection();
                     Intent svc = new Intent(MainActivity.this, FloatingButtonService.class);
                     stopService(svc);
                     sendJs("onServiceStopped()");
@@ -192,11 +193,6 @@ public class MainActivity extends Activity {
     }
 
     private void startFloatingService(final int resultCode, final Intent resultData) {
-        try {
-            Intent stopIntent = new Intent(this, FloatingButtonService.class);
-            stopService(stopIntent);
-        } catch (Exception ignored) {}
-
         new Handler(Looper.getMainLooper()).postDelayed(new Runnable() {
             @Override
             public void run() {
@@ -212,7 +208,7 @@ public class MainActivity extends Activity {
 
                 sendJs("onServiceStarted()");
             }
-        }, 400);
+        }, 200);
     }
 
     private void sendJs(final String jsCall) {
