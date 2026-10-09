@@ -1,16 +1,26 @@
 package com.signalanalyzer;
 
+import android.annotation.SuppressLint;
 import android.app.Activity;
+import android.content.BroadcastReceiver;
+import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.media.projection.MediaProjectionManager;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.provider.Settings;
-import android.view.View;
-import android.widget.Button;
-import android.widget.TextView;
+import android.webkit.JavascriptInterface;
+import android.webkit.WebSettings;
+import android.webkit.WebView;
+import android.webkit.WebViewClient;
 import android.widget.Toast;
+
+import java.io.ByteArrayOutputStream;
+import java.io.InputStream;
 
 public class MainActivity extends Activity {
 
@@ -18,51 +28,106 @@ public class MainActivity extends Activity {
     private static final int NOTIFICATION_PERMISSION_REQUEST = 2002;
     private static final int MEDIA_PROJECTION_REQUEST = 2003;
 
-    private TextView statusLabel;
-    private View statusDot;
-    private Button startButton;
-    private boolean isActive = false;
-
+    private WebView webView;
     private MediaProjectionManager projectionManager;
 
+    private BroadcastReceiver screenshotReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            String base64 = intent.getStringExtra(FloatingButtonService.EXTRA_BASE64);
+            if (base64 != null && webView != null) {
+                final String b = base64;
+                runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        webView.evaluateJavascript(
+                                "javascript:onScreenshotCaptured('" + b + "')", null);
+                    }
+                });
+            }
+        }
+    };
+
+    @SuppressLint({"SetJavaScriptEnabled", "AddJavascriptInterface"})
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        setContentView(R.layout.activity_main);
 
-        statusLabel = findViewById(R.id.statusLabel);
-        statusDot = findViewById(R.id.statusDot);
-        startButton = findViewById(R.id.startButton);
+        webView = new WebView(this);
+        WebSettings s = webView.getSettings();
+        s.setJavaScriptEnabled(true);
+        s.setDomStorageEnabled(true);
+        s.setAllowFileAccess(true);
+        webView.setBackgroundColor(0xFF0A0E1A);
+        webView.setWebViewClient(new WebViewClient());
+
+        try {
+            InputStream is = getAssets().open("index.html");
+            ByteArrayOutputStream baos = new ByteArrayOutputStream();
+            byte[] buf = new byte[4096];
+            int n;
+            while ((n = is.read(buf)) != -1) baos.write(buf, 0, n);
+            is.close();
+            String html = baos.toString("UTF-8");
+            webView.loadDataWithBaseURL("file:///android_asset/", html,
+                    "text/html", "UTF-8", null);
+        } catch (Exception e) {
+            Toast.makeText(this, "Failed to load UI: " + e.getMessage(),
+                    Toast.LENGTH_LONG).show();
+            finish();
+            return;
+        }
+
+        webView.addJavascriptInterface(new WebAppInterface(), "AndroidBridge");
+        setContentView(webView);
 
         projectionManager = (MediaProjectionManager)
                 getSystemService(MEDIA_PROJECTION_SERVICE);
 
-        updateUi();
-
-        startButton.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                if (!isActive) {
-                    startPermissionFlow();
-                } else {
-                    stopService();
-                }
-            }
-        });
-    }
-
-    @Override
-    protected void onResume() {
-        super.onResume();
-        if (isActive && !canDrawOverlays()) {
-            isActive = false;
-            updateUi();
+        // Register receiver for screenshots
+        IntentFilter filter = new IntentFilter(FloatingButtonService.ACTION_SCREENSHOT_CAPTURED);
+        if (Build.VERSION.SDK_INT >= 34) {
+            registerReceiver(screenshotReceiver, filter, Context.RECEIVER_NOT_EXPORTED);
+        } else if (Build.VERSION.SDK_INT >= 33) {
+            registerReceiver(screenshotReceiver, filter, Context.RECEIVER_EXPORTED);
+        } else {
+            registerReceiver(screenshotReceiver, filter);
         }
     }
 
-    // ---------- Permission flow ----------
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        try { unregisterReceiver(screenshotReceiver); } catch (Exception ignored) {}
+    }
+
+    @Override
+    public void onBackPressed() {
+        moveTaskToBack(true);
+    }
+
+    private class WebAppInterface {
+        @JavascriptInterface
+        public void requestStart() {
+            runOnUiThread(new Runnable() {
+                @Override public void run() { startPermissionFlow(); }
+            });
+        }
+
+        @JavascriptInterface
+        public void requestStop() {
+            runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    Intent svc = new Intent(MainActivity.this, FloatingButtonService.class);
+                    stopService(svc);
+                    sendJs("onServiceStopped()");
+                }
+            });
+        }
+    }
+
     private void startPermissionFlow() {
-        // Step 1: Notification permission (Android 13+)
         if (Build.VERSION.SDK_INT >= 33) {
             if (checkSelfPermission("android.permission.POST_NOTIFICATIONS")
                     != android.content.pm.PackageManager.PERMISSION_GRANTED) {
@@ -72,12 +137,12 @@ public class MainActivity extends Activity {
                 return;
             }
         }
-        // Step 2: Overlay permission
         requestOverlayThenProjection();
     }
 
     private void requestOverlayThenProjection() {
-        if (!canDrawOverlays()) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M
+                && !Settings.canDrawOverlays(this)) {
             Toast.makeText(this,
                     "Please allow \"Display over other apps\"",
                     Toast.LENGTH_LONG).show();
@@ -87,7 +152,6 @@ public class MainActivity extends Activity {
             startActivityForResult(intent, OVERLAY_PERMISSION_REQUEST);
             return;
         }
-        // Step 3: MediaProjection permission
         requestMediaProjection();
     }
 
@@ -96,9 +160,7 @@ public class MainActivity extends Activity {
             Intent captureIntent = projectionManager.createScreenCaptureIntent();
             startActivityForResult(captureIntent, MEDIA_PROJECTION_REQUEST);
         } else {
-            Toast.makeText(this,
-                    "MediaProjection not available on this device",
-                    Toast.LENGTH_LONG).show();
+            sendJs("onPermissionDenied('MediaProjection unavailable')");
         }
     }
 
@@ -116,70 +178,53 @@ public class MainActivity extends Activity {
         super.onActivityResult(requestCode, resultCode, data);
 
         if (requestCode == OVERLAY_PERMISSION_REQUEST) {
-            if (canDrawOverlays()) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M
+                    && Settings.canDrawOverlays(this)) {
                 requestMediaProjection();
             } else {
-                Toast.makeText(this,
-                        "Overlay permission denied", Toast.LENGTH_SHORT).show();
+                sendJs("onPermissionDenied('Overlay permission denied')");
             }
         } else if (requestCode == MEDIA_PROJECTION_REQUEST) {
             if (resultCode == RESULT_OK && data != null) {
-                startFloatingServiceWithProjection(resultCode, data);
+                startFloatingService(resultCode, data);
             } else {
-                Toast.makeText(this,
-                        "Screen capture permission denied",
-                        Toast.LENGTH_SHORT).show();
+                sendJs("onPermissionDenied('Screen capture denied')");
             }
         }
     }
 
-    private boolean canDrawOverlays() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            return Settings.canDrawOverlays(this);
-        }
-        return true;
+    private void startFloatingService(final int resultCode, final Intent resultData) {
+        try {
+            Intent stopIntent = new Intent(this, FloatingButtonService.class);
+            stopService(stopIntent);
+        } catch (Exception ignored) {}
+
+        new Handler(Looper.getMainLooper()).postDelayed(new Runnable() {
+            @Override
+            public void run() {
+                Intent svc = new Intent(MainActivity.this, FloatingButtonService.class);
+                svc.putExtra("resultCode", resultCode);
+                svc.putExtra("resultData", resultData);
+
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    startForegroundService(svc);
+                } else {
+                    startService(svc);
+                }
+
+                sendJs("onServiceStarted()");
+            }
+        }, 400);
     }
 
-    // ---------- Service control ----------
-    private void startFloatingServiceWithProjection(int resultCode, Intent data) {
-        Intent svc = new Intent(this, FloatingButtonService.class);
-        svc.setAction("START");
-        svc.putExtra("resultCode", resultCode);
-        svc.putExtra("resultData", data);
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            startForegroundService(svc);
-        } else {
-            startService(svc);
-        }
-        isActive = true;
-        updateUi();
-    }
-
-    private void stopService() {
-        Intent svc = new Intent(this, FloatingButtonService.class);
-        stopService(svc);
-        isActive = false;
-        updateUi();
-    }
-
-    // ---------- UI ----------
-    private void updateUi() {
-        if (isActive) {
-            startButton.setText(R.string.stop_signal);
-            startButton.setBackgroundColor(
-                    getResources().getColor(R.color.neon_red, null));
-            statusLabel.setText(R.string.floating_active);
-            int cyan = getResources().getColor(R.color.neon_cyan, null);
-            statusDot.setBackgroundColor(cyan);
-            statusLabel.setTextColor(cyan);
-        } else {
-            startButton.setText(R.string.start_signal);
-            startButton.setBackgroundColor(
-                    getResources().getColor(R.color.neon_cyan, null));
-            statusLabel.setText(R.string.status_ready);
-            int green = getResources().getColor(R.color.neon_green, null);
-            statusDot.setBackgroundColor(green);
-            statusLabel.setTextColor(green);
+    private void sendJs(final String jsCall) {
+        if (webView != null) {
+            runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    webView.evaluateJavascript("javascript:" + jsCall, null);
+                }
+            });
         }
     }
 }
