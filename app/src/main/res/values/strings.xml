@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Signal Analyzer</string>
+    <string name="start_signal">START SIGNAL</string>
+    <string name="status_offline">OFFLINE</string>
+    <string name="status_ready">READY</string>
+    <string name="status_analyzing">ANALYZING</string>
+    <string name="floating_active">FLOATING ASSISTANT ACTIVE</string>
+</resources>
