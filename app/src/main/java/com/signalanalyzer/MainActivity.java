@@ -84,12 +84,9 @@ public class MainActivity extends Activity {
         projectionManager = (MediaProjectionManager)
                 getSystemService(MEDIA_PROJECTION_SERVICE);
 
-        // Register receiver for screenshots
         IntentFilter filter = new IntentFilter(FloatingButtonService.ACTION_SCREENSHOT_CAPTURED);
         if (Build.VERSION.SDK_INT >= 34) {
             registerReceiver(screenshotReceiver, filter, Context.RECEIVER_NOT_EXPORTED);
-        } else if (Build.VERSION.SDK_INT >= 33) {
-            registerReceiver(screenshotReceiver, filter, Context.RECEIVER_EXPORTED);
         } else {
             registerReceiver(screenshotReceiver, filter);
         }
@@ -110,7 +107,8 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public void requestStart() {
             runOnUiThread(new Runnable() {
-                @Override public void run() { startPermissionFlow(); }
+                @Override
+                public void run() { startPermissionFlow(); }
             });
         }
 
