@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Signal Analyzer</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    width: 100%; height: 100%; overflow: hidden;
+    background: #0A0E1A;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    color: #FFFFFF;
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .container {
+    display: flex; flex-direction: column;
+    height: 100vh; padding: 24px;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .header { text-align: center; margin-top: 80px; }
+  .title { font-size: 34px; font-weight: 700; letter-spacing: 0.02em; }
+  .divider {
+    width: 60px; height: 3px; background: #00E5FF;
+    margin: 12px auto; box-shadow: 0 0 12px #00E5FF;
+  }
+  .tagline { font-size: 14px; color: #B0B8C4; letter-spacing: 0.05em; }
+  .card {
+    width: 100%; background: #131826; padding: 28px;
+    border-radius: 16px; border: 1px solid #1F2733; margin-bottom: 24px;
+  }
+  .status-row { display: flex; align-items: center; margin-bottom: 20px; }
+  .status-dot {
+    width: 12px; height: 12px; border-radius: 50%;
+    background: #FFC400; transition: all 0.3s;
+  }
+  .status-dot.ready { background: #00E676; box-shadow: 0 0 12px #00E676; }
+  .status-dot.active { background: #00E5FF; box-shadow: 0 0 12px #00E5FF; }
+  .status-dot.analyzing { background: #B388FF; box-shadow: 0 0 12px #B388FF; }
+  .status-dot.error { background: #FF5252; box-shadow: 0 0 12px #FF5252; }
+  .status-label {
+    margin-left: 12px; font-size: 13px; font-weight: 700;
+    letter-spacing: 0.15em; color: #B0B8C4; transition: color 0.3s;
+  }
+  .status-label.ready { color: #00E676; }
+  .status-label.active { color: #00E5FF; }
+  .status-label.analyzing { color: #B388FF; }
+  .status-label.error { color: #FF5252; }
+  .start-btn {
+    width: 100%; height: 60px; border: none; border-radius: 12px;
+    background: #00E5FF; color: #0A0E1A;
+    font-size: 16px; font-weight: 700; letter-spacing: 0.1em;
+    cursor: pointer; transition: all 0.3s;
+    box-shadow: 0 0 20px rgba(0, 229, 255, 0.4);
+  }
+  .start-btn:active { transform: scale(0.97); }
+  .start-btn.stop { background: #FF5252; box-shadow: 0 0 20px rgba(255, 82, 82, 0.4); }
+  .footer { text-align: center; font-size: 11px; color: #6B7280; padding-bottom: 16px; }
+  .result-overlay {
+    position: fixed; inset: 0; background: rgba(10, 14, 26, 0.95);
+    display: none; flex-direction: column; padding: 24px;
+    z-index: 100; justify-content: center; animation: fadeIn 0.3s ease;
+    overflow-y: auto;
+  }
+  .result-overlay.show { display: flex; }
+  @keyframes fadeIn { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }
+  .result-card {
+    background: #131826; border: 2px solid #00E5FF; border-radius: 16px;
+    padding: 24px; box-shadow: 0 0 40px rgba(0, 229, 255, 0.3);
+    margin: auto; max-width: 500px; width: 100%;
+  }
+  .result-title { font-size: 14px; color: #00E5FF; letter-spacing: 0.15em; margin-bottom: 16px; text-align: center; }
+  .result-direction { font-size: 42px; font-weight: 800; text-align: center; margin-bottom: 20px; }
+  .result-direction.call { color: #00E676; }
+  .result-direction.put { color: #FF5252; }
+  .result-direction.wait { color: #FFC400; }
+  .result-direction.no_signal, .result-direction.error { color: #6B7280; font-size: 24px; }
+  .result-row {
+    display: flex; justify-content: space-between;
+    padding: 10px 0; border-bottom: 1px solid #1F2733; font-size: 14px;
+  }
+  .result-row:last-child { border-bottom: none; }
+  .result-row.column { flex-direction: column; align-items: flex-start; }
+  .result-label { color: #B0B8C4; }
+  .result-value { color: #FFFFFF; font-weight: 600; text-align: right; max-width: 60%; }
+  .result-row.column .result-value { text-align: left; max-width: 100%; font-weight: 400; line-height: 1.5; margin-top: 6px; }
+  .confidence-bar { width: 100%; height: 6px; background: #1F2733; border-radius: 3px; margin-top: 8px; overflow: hidden; }
+  .confidence-fill { height: 100%; background: linear-gradient(90deg, #00E5FF, #B388FF); border-radius: 3px; transition: width 0.5s ease; }
+  .result-warning {
+    margin-top: 16px; padding: 12px; background: rgba(255, 196, 0, 0.1);
+    border-left: 3px solid #FFC400; border-radius: 6px;
+    font-size: 11px; color: #FFC400; line-height: 1.5;
+  }
+  .close-btn {
+    margin-top: 20px; padding: 14px; width: 100%; border: none;
+    border-radius: 12px; background: #1F2733; color: #FFFFFF;
+    font-size: 14px; font-weight: 600; cursor: pointer;
+  }
+  .close-btn:active { background: #2A3142; }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="header">
+    <div class="title">Signal Analyzer</div>
+    <div class="divider"></div>
+    <div class="tagline">AI Chart Analysis Assistant</div>
+  </div>
+  <div class="card">
+    <div class="status-row">
+      <div class="status-dot ready" id="statusDot"></div>
+      <div class="status-label ready" id="statusLabel">READY</div>
+    </div>
+    <button class="start-btn" id="startBtn" onclick="onStartClick()">START SIGNAL</button>
+  </div>
+  <div class="footer">Place the floating button over your chart and tap to analyze</div>
+</div>
+
+<div class="result-overlay" id="resultOverlay">
+  <div class="result-card">
+    <div class="result-title">ANALYSIS COMPLETE</div>
+    <div class="result-direction" id="resultDirection">—</div>
+    <div class="result-row">
+      <span class="result-label">Condition</span>
+      <span class="result-value" id="resultCondition">—</span>
+    </div>
+    <div class="result-row">
+      <span class="result-label">Duration</span>
+      <span class="result-value" id="resultDuration">—</span>
+    </div>
+    <div class="result-row column">
+      <span class="result-label">Model Confidence</span>
+      <span class="result-value" id="resultConfidence" style="align-self: flex-end;">—</span>
+      <div class="confidence-bar"><div class="confidence-fill" id="confidenceFill" style="width: 0%;"></div></div>
+    </div>
+    <div class="result-row column">
+      <span class="result-label">Reason</span>
+      <span class="result-value" id="resultReason">—</span>
+    </div>
+    <div class="result-row column">
+      <span class="result-label">Invalidation</span>
+      <span class="result-value" id="resultInvalidation">—</span>
+    </div>
+    <div class="result-warning">⚠ AI analysis is not a guarantee of profit. Model confidence is not win probability.</div>
+    <button class="close-btn" onclick="closeResult()">CLOSE</button>
+  </div>
+</div>
+
+<script>
+  // ═══════════════════════════════════════════════
+  // ⚡ BACKEND URL — এখানে আপনার সার্ভার URL বসান
+  // ═══════════════════════════════════════════════
+  // খালি রাখলে API কল হবে না, placeholder দেখাবে
+  const BACKEND_URL = "";  // e.g. "https://your-backend.com/analyze"
+
+  let isActive = false;
+  let isAnalyzing = false;
+
+  function setStatus(state, text) {
+    document.getElementById('statusDot').className = 'status-dot ' + state;
+    const lbl = document.getElementById('statusLabel');
+    lbl.className = 'status-label ' + state;
+    lbl.textContent = text;
+  }
+
+  function onStartClick() {
+    if (isAnalyzing) return;
+    if (!isActive) {
+      if (window.AndroidBridge) window.AndroidBridge.requestStart();
+      else toggleActive();
+    } else {
+      if (window.AndroidBridge) window.AndroidBridge.requestStop();
+      toggleActive();
+    }
+  }
+
+  function toggleActive() {
+    isActive = !isActive;
+    const btn = document.getElementById('startBtn');
+    if (isActive) {
+      btn.textContent = 'STOP SIGNAL';
+      btn.classList.add('stop');
+      setStatus('active', 'FLOATING ASSISTANT ACTIVE');
+    } else {
+      btn.textContent = 'START SIGNAL';
+      btn.classList.remove('stop');
+      setStatus('ready', 'READY');
+    }
+  }
+
+  function onServiceStarted() { isActive = false; toggleActive(); }
+  function onServiceStopped() { isActive = true; toggleActive(); }
+  function onPermissionDenied(msg) {
+    setStatus('error', 'PERMISSION DENIED');
+    setTimeout(() => setStatus('ready', 'READY'), 2500);
+  }
+
+  function onScreenshotCaptured(base64Image) {
+    setStatus('analyzing', 'ANALYZING');
+    isAnalyzing = true;
+
+    if (!BACKEND_URL) {
+      setTimeout(() => {
+        showResult({
+          direction: 'WAIT',
+          condition: 'Backend not configured',
+          duration: '—',
+          confidence: 0,
+          reason: 'Screenshot captured successfully. Add BACKEND_URL in index.html to enable AI analysis via Gemini.',
+          invalidation: 'N/A'
+        });
+        isAnalyzing = false;
+        setStatus('active', 'FLOATING ASSISTANT ACTIVE');
+      }, 1200);
+      return;
+    }
+
+    fetch(BACKEND_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ image: base64Image })
+    })
+    .then(res => res.json())
+    .then(data => {
+      if (data.status === 'no_signal') {
+        showResult({
+          direction: 'NO SIGNAL',
+          condition: '—', duration: '—', confidence: 0,
+          reason: data.reason || 'Insufficient visual information.',
+          invalidation: '—'
+        });
+      } else {
+        showResult(data);
+      }
+      isAnalyzing = false;
+      setStatus('active', 'FLOATING ASSISTANT ACTIVE');
+    })
+    .catch(err => {
+      showResult({
+        direction: 'ERROR',
+        condition: '—', duration: '—', confidence: 0,
+        reason: 'Network error: ' + err.message,
+        invalidation: '—'
+      });
+      isAnalyzing = false;
+      setStatus('error', 'ERROR');
+      setTimeout(() => setStatus('active', 'FLOATING ASSISTANT ACTIVE'), 2500);
+    });
+  }
+
+  function showResult(data) {
+    const dir = document.getElementById('resultDirection');
+    dir.textContent = data.direction || '—';
+    dir.className = 'result-direction ' + (data.direction || '').toLowerCase().replace(/ /g, '_');
+    document.getElementById('resultCondition').textContent = data.condition || '—';
+    document.getElementById('resultDuration').textContent = data.duration || '—';
+    document.getElementById('resultConfidence').textContent = (data.confidence || 0) + '%';
+    document.getElementById('resultReason').textContent = data.reason || '—';
+    document.getElementById('resultInvalidation').textContent = data.invalidation || '—';
+    document.getElementById('confidenceFill').style.width = (data.confidence || 0) + '%';
+    document.getElementById('resultOverlay').classList.add('show');
+  }
+
+  function closeResult() {
+    document.getElementById('resultOverlay').classList.remove('show');
+  }
+
+  window.addEventListener('DOMContentLoaded', () => setStatus('ready', 'READY'));
+</script>
+</body>
+</html>
