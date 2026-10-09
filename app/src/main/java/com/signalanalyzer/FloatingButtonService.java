@@ -16,7 +16,6 @@ import android.view.MotionEvent;
 import android.view.View;
 import android.view.WindowManager;
 import android.widget.ImageView;
-import android.widget.Toast;
 
 public class FloatingButtonService extends Service {
 
@@ -26,12 +25,15 @@ public class FloatingButtonService extends Service {
     private WindowManager windowManager;
     private View floatingButton;
     private WindowManager.LayoutParams params;
+    private NotificationManager notificationManager;
+    private int tapCount = 0;
 
     @Override
     public void onCreate() {
         super.onCreate();
+        notificationManager = getSystemService(NotificationManager.class);
         createNotificationChannel();
-        startForeground(NOTIFICATION_ID, buildNotification());
+        startForeground(NOTIFICATION_ID, buildNotification("Ready — tap the button"));
         addFloatingButton();
     }
 
@@ -61,15 +63,16 @@ public class FloatingButtonService extends Service {
             NotificationChannel channel = new NotificationChannel(
                     CHANNEL_ID,
                     "Signal Analyzer",
-                    NotificationManager.IMPORTANCE_LOW
+                    NotificationManager.IMPORTANCE_HIGH
             );
-            channel.setDescription("Floating assistant is running");
-            NotificationManager nm = getSystemService(NotificationManager.class);
-            if (nm != null) nm.createNotificationChannel(channel);
+            channel.setDescription("Floating assistant status");
+            if (notificationManager != null) {
+                notificationManager.createNotificationChannel(channel);
+            }
         }
     }
 
-    private Notification buildNotification() {
+    private Notification buildNotification(String statusText) {
         Intent openApp = new Intent(this, MainActivity.class);
         int flags = PendingIntent.FLAG_UPDATE_CURRENT;
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
@@ -85,21 +88,24 @@ public class FloatingButtonService extends Service {
         }
         return builder
                 .setContentTitle("Signal Analyzer")
-                .setContentText("Floating assistant is active")
+                .setContentText(statusText)
                 .setSmallIcon(android.R.drawable.ic_menu_view)
                 .setContentIntent(pi)
                 .setOngoing(true)
                 .build();
     }
 
+    private void updateNotification(String statusText) {
+        if (notificationManager != null) {
+            notificationManager.notify(NOTIFICATION_ID, buildNotification(statusText));
+        }
+    }
+
     // ---------- Floating Button ----------
     private void addFloatingButton() {
         windowManager = (WindowManager) getSystemService(WINDOW_SERVICE);
 
-        // Circular button (simple ImageView with round background)
         ImageView button = new ImageView(this);
-
-        // Create circular gradient drawable programmatically
         GradientDrawable circle = new GradientDrawable();
         circle.setShape(GradientDrawable.OVAL);
         circle.setColor(Color.parseColor("#00E5FF"));
@@ -116,7 +122,8 @@ public class FloatingButtonService extends Service {
                         ? WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
                         : WindowManager.LayoutParams.TYPE_PHONE,
                 WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
-                        | WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+                        | WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL
+                        | WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH,
                 PixelFormat.TRANSLUCENT
         );
         params.gravity = Gravity.TOP | Gravity.START;
@@ -125,36 +132,43 @@ public class FloatingButtonService extends Service {
 
         floatingButton = button;
 
-        // Drag handling
         floatingButton.setOnTouchListener(new View.OnTouchListener() {
             private int initialX, initialY;
             private float initialTouchX, initialTouchY;
+            private long touchStartTime;
             private boolean isDragging = false;
 
             @Override
             public boolean onTouch(View v, MotionEvent event) {
-                switch (event.getAction()) {
+                switch (event.getActionMasked()) {
                     case MotionEvent.ACTION_DOWN:
                         initialX = params.x;
                         initialY = params.y;
                         initialTouchX = event.getRawX();
                         initialTouchY = event.getRawY();
+                        touchStartTime = System.currentTimeMillis();
                         isDragging = false;
                         return true;
 
                     case MotionEvent.ACTION_MOVE:
                         int dx = (int) (event.getRawX() - initialTouchX);
                         int dy = (int) (event.getRawY() - initialTouchY);
-                        if (Math.abs(dx) > 10 || Math.abs(dy) > 10) {
+                        if (Math.abs(dx) > 15 || Math.abs(dy) > 15) {
                             isDragging = true;
                         }
-                        params.x = initialX + dx;
-                        params.y = initialY + dy;
-                        windowManager.updateViewLayout(floatingButton, params);
+                        if (isDragging) {
+                            params.x = initialX + dx;
+                            params.y = initialY + dy;
+                            windowManager.updateViewLayout(floatingButton, params);
+                        }
                         return true;
 
                     case MotionEvent.ACTION_UP:
-                        if (!isDragging) {
+                    case MotionEvent.ACTION_CANCEL:
+                        long duration = System.currentTimeMillis() - touchStartTime;
+                        boolean wasDragging = isDragging;
+                        isDragging = false;
+                        if (!wasDragging && duration < 700) {
                             onButtonTapped();
                         }
                         return true;
@@ -167,8 +181,8 @@ public class FloatingButtonService extends Service {
     }
 
     private void onButtonTapped() {
-        // Placeholder — next phase: capture screenshot + send to backend
-        Toast.makeText(this, "Button tapped — capture coming next", Toast.LENGTH_SHORT).show();
+        tapCount++;
+        updateNotification("Tapped " + tapCount + " time(s) — capture coming next");
     }
 
     private int dpToPx(int dp) {
