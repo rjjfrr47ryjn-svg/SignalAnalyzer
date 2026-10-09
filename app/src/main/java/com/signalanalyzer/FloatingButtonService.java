@@ -1,4 +1,4 @@
-package com.signalanalyzer;
+ package com.signalanalyzer;
 
 import android.app.Notification;
 import android.app.NotificationChannel;
@@ -38,7 +38,6 @@ public class FloatingButtonService extends Service {
     private static final String CHANNEL_ID = "signal_analyzer_channel";
     private static final int NOTIFICATION_ID = 1001;
 
-    // ═══ These constants are used by MainActivity ═══
     public static final String ACTION_SCREENSHOT_CAPTURED =
             "com.signalanalyzer.SCREENSHOT_CAPTURED";
     public static final String EXTRA_BASE64 = "base64_image";
@@ -54,17 +53,27 @@ public class FloatingButtonService extends Service {
     private boolean isDragging = false;
 
     private MediaProjectionManager projectionManager;
-    private MediaProjection mediaProjection;
-    private VirtualDisplay virtualDisplay;
-    private ImageReader imageReader;
-    private int screenWidth, screenHeight, screenDensity;
+
+    // ═══════════════════════════════════════════════
+    // STATIC — persists across service restarts
+    // ═══════════════════════════════════════════════
+    private static MediaProjection mediaProjection;
+    private static VirtualDisplay virtualDisplay;
+    private static ImageReader imageReader;
+    private static int screenWidth, screenHeight, screenDensity;
+    private static boolean projectionReady = false;
 
     @Override
     public void onCreate() {
         super.onCreate();
         notificationManager = getSystemService(NotificationManager.class);
         createNotificationChannel();
-        startForeground(NOTIFICATION_ID, buildNotification("Starting..."));
+
+        // If projection already set up from previous service instance, keep it
+        String initialText = projectionReady
+                ? "Ready — tap to capture"
+                : "Starting...";
+        startForeground(NOTIFICATION_ID, buildNotification(initialText));
 
         projectionManager = (MediaProjectionManager)
                 getSystemService(Context.MEDIA_PROJECTION_SERVICE);
@@ -76,11 +85,21 @@ public class FloatingButtonService extends Service {
         if (intent != null) {
             int resultCode = intent.getIntExtra("resultCode", -1);
             Intent resultData = intent.getParcelableExtra("resultData");
+
             if (resultData != null && resultCode != -1) {
+                // Fresh data from MainActivity
                 setupMediaProjection(resultCode, resultData);
-            } else {
+            } else if (projectionReady && mediaProjection != null) {
+                // Service restarted without data — but projection is alive
                 updateNotification("Ready — tap to capture");
+            } else {
+                // No data, no projection — user must restart
+                updateNotification("Capture not ready — restart app");
             }
+        } else if (projectionReady && mediaProjection != null) {
+            updateNotification("Ready — tap to capture");
+        } else {
+            updateNotification("Capture not ready — restart app");
         }
         return START_STICKY;
     }
@@ -91,21 +110,31 @@ public class FloatingButtonService extends Service {
         if (windowManager != null && floatingButton != null) {
             try { windowManager.removeView(floatingButton); } catch (Exception ignored) {}
         }
-        if (virtualDisplay != null) try { virtualDisplay.release(); } catch (Exception ignored) {}
-        if (imageReader != null) try { imageReader.close(); } catch (Exception ignored) {}
-        if (mediaProjection != null) try { mediaProjection.stop(); } catch (Exception ignored) {}
+        // ⚠ DO NOT release projection here — keep it alive for restart
+        // Only release if user explicitly stops (via MainActivity.stopService)
+        // That will be handled when service fully stops
     }
 
     @Override
     public IBinder onBind(Intent intent) { return null; }
 
     private void setupMediaProjection(int resultCode, Intent resultData) {
+        // If already set up, skip
+        if (projectionReady && mediaProjection != null) {
+            updateNotification("Ready — tap to capture");
+            return;
+        }
+
         try {
+            // Clean up old
+            releaseProjection();
+
             mediaProjection = projectionManager.getMediaProjection(resultCode, resultData);
             if (mediaProjection == null) {
                 updateNotification("Projection null");
                 return;
             }
+
             DisplayMetrics metrics = getResources().getDisplayMetrics();
             screenWidth = metrics.widthPixels;
             screenHeight = metrics.heightPixels;
@@ -120,10 +149,45 @@ public class FloatingButtonService extends Service {
                     DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
                     imageReader.getSurface(), null, null);
 
+            projectionReady = true;
             updateNotification("Ready — tap to capture");
         } catch (Exception e) {
-            updateNotification("Setup error");
+            projectionReady = false;
+            updateNotification("Setup error: " + e.getClass().getSimpleName());
         }
+    }
+
+    private void releaseProjection() {
+        try {
+            if (virtualDisplay != null) virtualDisplay.release();
+        } catch (Exception ignored) {}
+        try {
+            if (imageReader != null) imageReader.close();
+        } catch (Exception ignored) {}
+        try {
+            if (mediaProjection != null) mediaProjection.stop();
+        } catch (Exception ignored) {}
+        virtualDisplay = null;
+        imageReader = null;
+        mediaProjection = null;
+        projectionReady = false;
+    }
+
+    // Public method for MainActivity to call on STOP
+    public static void resetProjection() {
+        try {
+            if (virtualDisplay != null) virtualDisplay.release();
+        } catch (Exception ignored) {}
+        try {
+            if (imageReader != null) imageReader.close();
+        } catch (Exception ignored) {}
+        try {
+            if (mediaProjection != null) mediaProjection.stop();
+        } catch (Exception ignored) {}
+        virtualDisplay = null;
+        imageReader = null;
+        mediaProjection = null;
+        projectionReady = false;
     }
 
     private void createNotificationChannel() {
@@ -235,8 +299,8 @@ public class FloatingButtonService extends Service {
             if (v != null) v.vibrate(60);
         } catch (Exception ignored) {}
 
-        if (mediaProjection == null) {
-            updateNotification("Capture not ready");
+        if (!projectionReady || mediaProjection == null || imageReader == null) {
+            updateNotification("Capture not ready — restart app");
         } else {
             updateNotification("Capturing...");
             captureScreenshot();
@@ -249,19 +313,32 @@ public class FloatingButtonService extends Service {
 
     private void captureScreenshot() {
         try {
-            if (imageReader == null) return;
-            Image image = imageReader.acquireLatestImage();
-            if (image == null) {
-                handler.postDelayed(new Runnable() {
-                    @Override public void run() { captureScreenshot(); }
-                }, 200);
+            if (imageReader == null) {
+                updateNotification("ImageReader missing");
                 return;
             }
+            Image image = imageReader.acquireLatestImage();
+            if (image == null) {
+                // Retry a few times
+                retryCount++;
+                if (retryCount < 5) {
+                    handler.postDelayed(new Runnable() {
+                        @Override public void run() { captureScreenshot(); }
+                    }, 200);
+                } else {
+                    retryCount = 0;
+                    updateNotification("Capture failed — try again");
+                }
+                return;
+            }
+            retryCount = 0;
             processImage(image);
         } catch (Exception e) {
             updateNotification("Capture error");
         }
     }
+
+    private int retryCount = 0;
 
     private void processImage(Image image) {
         Bitmap bitmap = null;
@@ -291,7 +368,7 @@ public class FloatingButtonService extends Service {
             cropped = bitmap;
         }
 
-        updateNotification("Screenshot captured");
+        updateNotification("Screenshot captured ✓");
 
         String base64 = bitmapToBase64(cropped);
 
@@ -302,7 +379,7 @@ public class FloatingButtonService extends Service {
 
         handler.postDelayed(new Runnable() {
             @Override public void run() { updateNotification("Ready — tap to capture"); }
-        }, 3000);
+        }, 2500);
     }
 
     private String bitmapToBase64(Bitmap bitmap) {
