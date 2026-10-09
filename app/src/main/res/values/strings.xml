@@ -1,9 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Signal Analyzer</string>
+    <string name="app_tagline">AI Chart Analysis Assistant</string>
+    
     <string name="start_signal">START SIGNAL</string>
+    <string name="stop_signal">STOP SIGNAL</string>
+    
+    <string name="status_label">Status</string>
     <string name="status_offline">OFFLINE</string>
     <string name="status_ready">READY</string>
     <string name="status_analyzing">ANALYZING</string>
+    
     <string name="floating_active">FLOATING ASSISTANT ACTIVE</string>
+    <string name="floating_hint">Place the floating button over your chart and tap to analyze</string>
+    
+    <string name="permission_needed">Permissions Required</string>
+    <string name="permission_explain">Signal Analyzer needs overlay and screen capture permissions to work while you use other apps.</string>
+    <string name="permission_grant">Grant Permissions</string>
 </resources>
